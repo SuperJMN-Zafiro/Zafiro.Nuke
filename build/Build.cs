@@ -1,44 +1,42 @@
 using System;
 using System.Linq;
 using Nuke.Common;
-using Nuke.Common.CI;
-using Nuke.Common.Execution;
+using Nuke.Common.Git;
 using Nuke.Common.IO;
 using Nuke.Common.ProjectModel;
-using Nuke.Common.Tooling;
-using Nuke.Common.Utilities.Collections;
-using static Nuke.Common.EnvironmentInfo;
-using static Nuke.Common.IO.FileSystemTasks;
-using static Nuke.Common.IO.PathConstruction;
+using Nuke.Common.Tools.GitVersion;
+using Serilog;
+using Zafiro.Nuke;
+using CSharpFunctionalExtensions;
 
 class Build : NukeBuild
 {
-    /// Support plugins are available for:
-    ///   - JetBrains ReSharper        https://nuke.build/resharper
-    ///   - JetBrains Rider            https://nuke.build/rider
-    ///   - Microsoft VisualStudio     https://nuke.build/visualstudio
-    ///   - Microsoft VSCode           https://nuke.build/vscode
-
-    public static int Main () => Execute<Build>(x => x.Compile);
+    [GitVersion] readonly GitVersion GitVersion;
+    [Parameter] [Secret] readonly string NuGetApiKey;
+    [Solution] readonly Solution Solution;
+    [GitRepository] readonly GitRepository Repository;
+    
+    public static int Main () => Execute<Build>(x => x.PublishNuget);
 
     [Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
     readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
 
-    Target Clean => _ => _
-        .Before(Restore)
+    Target Clean => d => d
         .Executes(() =>
         {
+            var absolutePaths = RootDirectory.GlobDirectories("**/bin", "**/obj").Where(a => !((string) a).Contains("build")).ToList();
+            Log.Information("Deleting {Dirs}", absolutePaths);
+            absolutePaths.DeleteDirectories();
         });
 
-    Target Restore => _ => _
+    Target PublishNuget => d => d
+        .Requires(() => NuGetApiKey)
+        .DependsOn(Clean)
+        .OnlyWhenStatic(() => Repository.IsOnMainOrMasterBranch())
         .Executes(() =>
         {
+            var actions = new Actions(Solution, RootDirectory, GitVersion, Configuration);
+            actions.PushNuGetPackages(NuGetApiKey)
+                .TapError(error => throw new ApplicationException(error));
         });
-
-    Target Compile => _ => _
-        .DependsOn(Restore)
-        .Executes(() =>
-        {
-        });
-
 }

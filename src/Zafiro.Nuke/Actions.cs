@@ -14,6 +14,8 @@ using Zafiro.FileSystem.Lightweight;
 using static Nuke.Common.Tools.DotNet.DotNetTasks;
 using AppImage = DotnetPackaging.AppImage.AppImage;
 using Architecture = System.Runtime.InteropServices.Architecture;
+using Microsoft.Build.Evaluation;
+using Project = Nuke.Common.ProjectModel.Project;
 
 namespace Zafiro.Nuke;
 
@@ -130,15 +132,32 @@ public class Actions
                 packSettings.SetProject(project)));
     }
 
-    public void PushNuGetPackages(string nuGetApiKey)
+    public Result PushNuGetPackages(string nuGetApiKey)
     {
-        var nugetPackages = OutputDirectory.GlobFiles("*.nupkg");
-        Assert.NotEmpty(nugetPackages);
-        
-        DotNetNuGetPush(settings => settings
+        var packableProjects = Solution.AllProjects.Where(x => x.GetProperty<bool>("IsPackable")).ToList();
+
+        return packableProjects
+            .Select(project => Pack(project, nuGetApiKey))
+            .Combine();
+    }
+
+    private Result Pack(Project project, string nuGetApiKey)
+    {
+        return Result.Try(() =>
+        {
+            DotNetPack(settings => settings
+                .SetConfiguration(Configuration)
+                .SetVersion(GitVersion.NuGetVersion)
+                .SetOutputDirectory(OutputDirectory)
+                .SetProject(project));
+
+            var packageId = project.GetProperty("PackageId") ?? project.GetProperty("AssemblyName") ?? project.Name;
+            var package = OutputDirectory / packageId + "." + GitVersion.NuGetVersion + ".nupkg";
+
+            DotNetNuGetPush(settings => settings
                 .SetSource("https://api.nuget.org/v3/index.json")
                 .SetApiKey(nuGetApiKey)
-                .CombineWith(nugetPackages, (s, v) => s.SetTargetPath(v)),
-            degreeOfParallelism: 5, completeOnFailure: true);
+                .SetTargetPath(package));
+        });
     }
 }
