@@ -17,6 +17,38 @@ using AppImage = DotnetPackaging.AppImage.AppImage;
 using Architecture = System.Runtime.InteropServices.Architecture;
 using Microsoft.Build.Evaluation;
 using Project = Nuke.Common.ProjectModel.Project;
+using static Nuke.Common.Tools.DotNet.DotNetTasks;
+using static Nuke.GitHub.GitHubTasks;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.IO.Abstractions;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
+using CSharpFunctionalExtensions;
+using DotnetPackaging;
+using DotnetPackaging.AppImage;
+using DotnetPackaging.AppImage.Core;
+using NuGet.Common;
+using Nuke.Common;
+using Nuke.Common.IO;
+using Nuke.Common.ProjectModel;
+using Nuke.Common.Tooling;
+using Nuke.Common.Tools.GitVersion;
+using Nuke.Common.Git;
+using Nuke.Common.Tools.DotNet;using Nuke.Common.Tools.NSwag;
+using Nuke.Common.Utilities.Collections;
+using Nuke.GitHub;
+using Serilog;
+using Zafiro.FileSystem.Lightweight;
+using static Nuke.Common.Tools.DotNet.DotNetTasks;
+using static Nuke.GitHub.GitHubTasks;
+using static Nuke.Common.Tooling.ProcessTasks;
+using Maybe = CSharpFunctionalExtensions.Maybe;
+using static Nuke.Common.Tools.NSwag.NSwagTasks;
 
 namespace Zafiro.Nuke;
 
@@ -30,6 +62,7 @@ public class Actions
 
     private System.IO.Abstractions.FileSystem FileSystem { get; } = new();
     public Solution Solution { get; }
+    public GitRepository Repository { get; }
     public AbsolutePath RootDirectory { get; }
     public GitVersion GitVersion { get; }
     public string Configuration { get; }
@@ -37,9 +70,10 @@ public class Actions
     public AbsolutePath PublishDirectory => OutputDirectory / "publish";
     public AbsolutePath PackagesDirectory => OutputDirectory / "packages";
 
-    public Actions(Solution solution, AbsolutePath rootDirectory, GitVersion gitVersion, string configuration = "Release")
+    public Actions(Solution solution, GitRepository repository, AbsolutePath rootDirectory, GitVersion gitVersion, string configuration = "Release")
     {
         Solution = solution;
+        Repository = repository;
         RootDirectory = rootDirectory;
         GitVersion = gitVersion;
         Configuration = configuration;
@@ -138,6 +172,26 @@ public class Actions
         return packableProjects
             .Select(project => Pack(project, nuGetApiKey))
             .Combine();
+    }
+
+    public Task<Result> CreateGitHubRelease(string authenticationToken, params AbsolutePath[] artifacts)
+    {
+        return Result.Try(() =>
+        {
+            Assert.NotEmpty(artifacts, "Could not find any assets to upload to the release");
+            var releaseTag = $"v{GitVersion.MajorMinorPatch}";
+            var repositoryInfo = GetGitHubRepositoryInfo(Repository);
+            Log.Information("Commit for the release: {GitVersionSha}", GitVersion.Sha);
+            
+            return PublishRelease(x => x
+                .SetArtifactPaths(artifacts.Select(path => (string) path).ToArray())
+                .SetCommitSha(GitVersion.Sha)
+                .SetRepositoryName(repositoryInfo.repositoryName)
+                .SetRepositoryOwner(repositoryInfo.gitHubOwner)
+                .SetTag(releaseTag)
+                .SetToken(authenticationToken)
+            );
+        });
     }
 
     private Result Pack(Project project, string nuGetApiKey)
