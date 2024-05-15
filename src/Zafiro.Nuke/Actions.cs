@@ -8,47 +8,16 @@ using Nuke.Common.ProjectModel;
 using Nuke.Common.Tooling;
 using Nuke.Common.Tools.DotNet;
 using Nuke.Common.Tools.GitVersion;
-using Nuke.Common.Utilities.Collections;
 using Serilog;
 using Zafiro.FileSystem;
 using Zafiro.FileSystem.Lightweight;
 using static Nuke.Common.Tools.DotNet.DotNetTasks;
 using AppImage = DotnetPackaging.AppImage.AppImage;
 using Architecture = System.Runtime.InteropServices.Architecture;
-using Microsoft.Build.Evaluation;
 using Project = Nuke.Common.ProjectModel.Project;
-using static Nuke.Common.Tools.DotNet.DotNetTasks;
 using static Nuke.GitHub.GitHubTasks;
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.IO.Abstractions;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Threading.Tasks;
-using CSharpFunctionalExtensions;
-using DotnetPackaging;
-using DotnetPackaging.AppImage;
-using DotnetPackaging.AppImage.Core;
-using NuGet.Common;
-using Nuke.Common;
-using Nuke.Common.IO;
-using Nuke.Common.ProjectModel;
-using Nuke.Common.Tooling;
-using Nuke.Common.Tools.GitVersion;
 using Nuke.Common.Git;
-using Nuke.Common.Tools.DotNet;using Nuke.Common.Tools.NSwag;
-using Nuke.Common.Utilities.Collections;
 using Nuke.GitHub;
-using Serilog;
-using Zafiro.FileSystem.Lightweight;
-using static Nuke.Common.Tools.DotNet.DotNetTasks;
-using static Nuke.GitHub.GitHubTasks;
-using static Nuke.Common.Tooling.ProcessTasks;
-using Maybe = CSharpFunctionalExtensions.Maybe;
-using static Nuke.Common.Tools.NSwag.NSwagTasks;
 
 namespace Zafiro.Nuke;
 
@@ -79,7 +48,7 @@ public class Actions
         Configuration = configuration;
     }
 
-    public Result<IEnumerable<string>> CreateAndroidPacks(string base64Keystore, string signingKeyAlias, string signingKeyPass, string signingStorePass)
+    public Result<IEnumerable<AbsolutePath>> CreateAndroidPacks(string base64Keystore, string signingKeyAlias, string signingKeyPass, string signingStorePass)
     {
         return Result.Try(() =>
         {
@@ -101,7 +70,7 @@ public class Actions
 
             keystore.DeleteFile();
 
-            return Glob.Files(PublishDirectory, "*.apk");
+            return Glob.Files(PublishDirectory, "*.apk").Select(s => (AbsolutePath)s);
         });
     }
 
