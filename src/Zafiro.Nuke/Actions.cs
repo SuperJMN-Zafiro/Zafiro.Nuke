@@ -50,6 +50,26 @@ public class Actions
 
     public Result<IEnumerable<AbsolutePath>> CreateAndroidPacks(string base64Keystore, string signingKeyAlias, string signingKeyPass, string signingStorePass)
     {
+        if (base64Keystore == null)
+        {
+            throw new ArgumentNullException(nameof(base64Keystore));
+        }
+
+        if (signingKeyAlias == null)
+        {
+            throw new ArgumentNullException(nameof(signingKeyAlias));
+        }
+
+        if (signingKeyPass == null)
+        {
+            throw new ArgumentNullException(nameof(signingKeyPass));
+        }
+
+        if (signingStorePass == null)
+        {
+            throw new ArgumentNullException(nameof(signingStorePass));
+        }
+
         return Result.Try(() =>
         {
             var androidProject = Solution.AllProjects.First(project => project.Name.EndsWith("Android"));
