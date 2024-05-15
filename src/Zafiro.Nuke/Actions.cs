@@ -1,6 +1,7 @@
 ﻿using CSharpFunctionalExtensions;
 using DotnetPackaging;
 using DotnetPackaging.AppImage.Core;
+using GlobExpressions;
 using Nuke.Common;
 using Nuke.Common.IO;
 using Nuke.Common.ProjectModel;
@@ -44,50 +45,59 @@ public class Actions
         Configuration = configuration;
     }
 
-    public void CreateAndroidPack(string base64Keystore, string signingKeyAlias, string signingKeyPass, string signingStorePass)
+    public Result<IEnumerable<string>> CreateAndroidPacks(string base64Keystore, string signingKeyAlias, string signingKeyPass, string signingStorePass)
     {
-        var androidProject = Solution.AllProjects.First(project => project.Name.EndsWith("Android"));
-        var keystore = OutputDirectory / "temp.keystore";
-        keystore.WriteAllBytes(Convert.FromBase64String(base64Keystore));
-
-        DotNetPublish(settings => settings
-            .SetProperty("ApplicationVersion", GitVersion.CommitsSinceVersionSource)
-            .SetProperty("ApplicationDisplayVersion", GitVersion.MajorMinorPatch)
-            .SetProperty("AndroidKeyStore", "true")
-            .SetProperty("AndroidSigningKeyStore", keystore)
-            .SetProperty("AndroidSigningKeyAlias", signingKeyAlias)
-            .SetProperty("AndroidSigningStorePass", signingStorePass)
-            .SetProperty("AndroidSigningKeyPass", signingKeyPass)
-            .SetConfiguration("Release")
-            .SetProject(androidProject)
-            .SetOutput(PublishDirectory));
-
-        keystore.DeleteFile();
-    }
-
-    public void CreateWindowsPack()
-    {
-        var desktopProject = Solution.AllProjects.First(project => project.Name.EndsWith("Desktop"));
-        var runtimes = new[] { "win-x64", };
-
-        DotNetPublish(settings => settings
-            .SetConfiguration(Configuration)
-            .SetProject(desktopProject)
-            .CombineWith(runtimes, (c, runtime) =>
-                c.SetRuntime(runtime)
-                    .SetOutput(PublishDirectory / runtime)));
-
-        runtimes.ForEach(rt =>
+        return Result.Try(() =>
         {
-            var src = PublishDirectory / rt;
-            var zipName = $"{Solution.Name}_{GitVersion.MajorMinorPatch}_{rt}.zip";
-            var dest = PackagesDirectory / zipName;
-            Log.Information("Zipping {Input} to {Output}", src, dest);
-            src.ZipTo(dest);
+            var androidProject = Solution.AllProjects.First(project => project.Name.EndsWith("Android"));
+            var keystore = OutputDirectory / "temp.keystore";
+            keystore.WriteAllBytes(Convert.FromBase64String(base64Keystore));
+
+            DotNetPublish(settings => settings
+                .SetProperty("ApplicationVersion", GitVersion.CommitsSinceVersionSource)
+                .SetProperty("ApplicationDisplayVersion", GitVersion.MajorMinorPatch)
+                .SetProperty("AndroidKeyStore", "true")
+                .SetProperty("AndroidSigningKeyStore", keystore)
+                .SetProperty("AndroidSigningKeyAlias", signingKeyAlias)
+                .SetProperty("AndroidSigningStorePass", signingStorePass)
+                .SetProperty("AndroidSigningKeyPass", signingKeyPass)
+                .SetConfiguration("Release")
+                .SetProject(androidProject)
+                .SetOutput(PublishDirectory));
+
+            keystore.DeleteFile();
+
+            return Glob.Files(PublishDirectory, "*.apk");
         });
     }
 
-    public Task<Result> CreateLinuxAppImages(Options options)
+    public Result<IEnumerable<AbsolutePath>> CreateWindowsPacks()
+    {
+        return Result.Try(() =>
+        {
+            var desktopProject = Solution.AllProjects.First(project => project.Name.EndsWith("Desktop"));
+            var runtimes = new[] { "win-x64", };
+
+            DotNetPublish(settings => settings
+                .SetConfiguration(Configuration)
+                .SetProject(desktopProject)
+                .CombineWith(runtimes, (c, runtime) =>
+                    c.SetRuntime(runtime)
+                        .SetOutput(PublishDirectory / runtime)));
+
+            return runtimes.Select(rt =>
+            {
+                var src = PublishDirectory / rt;
+                var zipName = $"{Solution.Name}_{GitVersion.MajorMinorPatch}_{rt}.zip";
+                var dest = PackagesDirectory / zipName;
+                Log.Information("Zipping {Input} to {Output}", src, dest);
+                src.ZipTo(dest);
+                return dest;
+            });
+        });
+    }
+
+    public Task<Result<IEnumerable<AbsolutePath>>> CreateLinuxAppImages(Options options)
     {
         IEnumerable<Architecture> supportedArchitectures = [Architecture.Arm64, Architecture.X64];
         var desktopProject = Solution.AllProjects.First(project => project.Name.EndsWith("Desktop"));
@@ -98,7 +108,7 @@ public class Actions
             .CombineInOrder();
     }
 
-    private Task<Result> CreateAppImage(Options options, Architecture architecture, Project desktopProject)
+    private Task<Result<AbsolutePath>> CreateAppImage(Options options, Architecture architecture, Project desktopProject)
     {
         var publishDirectory = desktopProject.Directory / "bin" / "publish" / ArchitectureData[architecture].Runtime;
 
@@ -117,19 +127,8 @@ public class Actions
             .Configure(configuration => configuration.From(options))
             .Build()
             .Bind(appImage => appImage.ToData())
-            .Bind(x => x.DumpTo(packagePath));
-    }
-
-    public void CreateNuGetPackages()
-    {
-        var packableProjects = Solution.AllProjects.Where(x => x.GetProperty<bool>("IsPackable")).ToList();
-
-        DotNetPack(settings => settings
-            .SetConfiguration(Configuration)
-            .SetVersion(GitVersion.NuGetVersion)
-            .SetOutputDirectory(OutputDirectory)
-            .CombineWith(packableProjects, (packSettings, project) =>
-                packSettings.SetProject(project)));
+            .Bind(x => x.DumpTo(packagePath))
+            .Map(() => packagePath);
     }
 
     public Result PushNuGetPackages(string nuGetApiKey)
