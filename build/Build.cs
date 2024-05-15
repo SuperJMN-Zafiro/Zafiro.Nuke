@@ -35,7 +35,7 @@ class Build : NukeBuild
         .OnlyWhenStatic(() => Repository.IsOnMainOrMasterBranch())
         .Executes(() =>
         {
-            var actions = new Actions(Solution, RootDirectory, GitVersion, Configuration);
+            var actions = new Actions(Solution, Repository, RootDirectory, GitVersion, Configuration);
             actions.PushNuGetPackages(NuGetApiKey)
                 .TapError(error => throw new ApplicationException(error));
         });
