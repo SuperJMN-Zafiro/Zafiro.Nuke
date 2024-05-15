@@ -6,4 +6,4 @@ steps:
 
 - powershell: .\build.ps1
   env:
-    GitHubAuthenticationToken: $(NuGetApiKey)
+    NuGetApiKey: $(NuGetApiKey)
