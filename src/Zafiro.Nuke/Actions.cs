@@ -90,7 +90,7 @@ public class Actions
 
             keystore.DeleteFile();
 
-            return Glob.Files(PublishDirectory, "*.apk").Select(s => (AbsolutePath)s);
+            return Glob.Files(PublishDirectory, "*.apk").Select(apkFileName => PublishDirectory / apkFileName);
         });
     }
 
