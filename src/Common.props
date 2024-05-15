@@ -1,0 +1,24 @@
+<Project>
+	<PropertyGroup>
+		<AssemblyName>$(MSBuildProjectName)</AssemblyName>
+		<RootNamespace>$(MSBuildProjectName.Replace(" ", "_"))</RootNamespace>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<PackageId>$(MSBuildProjectName)</PackageId>
+		<Authors>SuperJMN</Authors>
+		<Description>Nuke Build is easier. This one makes it even easier!</Description>
+		<PackageRequireLicenseAcceptance>False</PackageRequireLicenseAcceptance>
+		<PackageTags>Nuke Build CI DevOps CD</PackageTags>
+		<Product>Zafiro.Nuke</Product>
+		<Company>José Manuel Nieto (@SuperJMN)</Company>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageIcon>icon.png</PackageIcon>
+		<PackageIconUrl />
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\..\icon.png" Pack="true" PackagePath=""/>
+	</ItemGroup>
+
+</Project>
