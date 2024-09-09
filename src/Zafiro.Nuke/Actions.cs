@@ -96,39 +96,50 @@ public class Actions
 
     public Result<IEnumerable<AbsolutePath>> CreateWindowsPacks()
     {
-        return Result.Try(() =>
-        {
-            var desktopProject = Solution.AllProjects.First(project => project.Name.EndsWith("Desktop"));
-            var runtimes = new[] { "win-x64", };
-
-            DotNetPublish(settings => settings
-                .SetConfiguration(Configuration)
-                .SetProject(desktopProject)
-                .CombineWith(runtimes, (c, runtime) =>
-                    c.SetRuntime(runtime)
-                        .SetOutput(PublishDirectory / runtime)));
-
-            return runtimes.Select(rt =>
+        var result = GetExecutableProject()
+            .Bind(project =>
             {
-                var src = PublishDirectory / rt;
-                var zipName = $"{Solution.Name}_{GitVersion.MajorMinorPatch}_{rt}.zip";
-                var dest = PackagesDirectory / zipName;
-                Log.Information("Zipping {Input} to {Output}", src, dest);
-                src.ZipTo(dest);
-                return dest;
+                return Result.Try(() =>
+                {
+                    var runtimes = new[] { "win-x64", };
+
+                    DotNetPublish(settings => settings
+                        .SetConfiguration(Configuration)
+                        .SetProject(project)
+                        .CombineWith(runtimes, (c, runtime) =>
+                            c.SetRuntime(runtime)
+                                .SetOutput(PublishDirectory / runtime)));
+
+                    return runtimes.Select(rt =>
+                    {
+                        var src = PublishDirectory / rt;
+                        var zipName = $"{Solution.Name}_{GitVersion.MajorMinorPatch}_{rt}.zip";
+                        var dest = PackagesDirectory / zipName;
+                        Log.Information("Zipping {Input} to {Output}", src, dest);
+                        src.ZipTo(dest);
+                        return dest;
+                    });
+                });
             });
-        });
+
+        return result;
+    }
+
+    private Result<Project> GetExecutableProject()
+    {
+        return Solution.AllProjects
+            .TryFirst(project => project.GetOutputType().Equals("exe", StringComparison.OrdinalIgnoreCase))
+            .ToResult("Cannot find any project of type 'Exe'");
     }
 
     public Task<Result<IEnumerable<AbsolutePath>>> CreateLinuxAppImages(Options options)
     {
         IEnumerable<Architecture> supportedArchitectures = [Architecture.Arm64, Architecture.X64];
-        var desktopProject = Solution.AllProjects.First(project => project.Name.EndsWith("Desktop"));
 
-        return supportedArchitectures
-            .Select(architecture => CreateAppImage(options, architecture, desktopProject)
-                .Tap(() => Log.Information("Publishing AppImage for {Architecture}", architecture)))
-            .CombineInOrder();
+        var executableProject = GetExecutableProject();
+        return executableProject.Bind(project => supportedArchitectures
+            .Select(architecture => CreateAppImage(options, architecture, project).Tap(() => Log.Information("Publishing AppImage for {Architecture}", architecture)))
+            .CombineInOrder());
     }
 
     private Task<Result<AbsolutePath>> CreateAppImage(Options options, Architecture architecture, Project desktopProject)
@@ -171,9 +182,9 @@ public class Actions
             var releaseTag = $"v{GitVersion.MajorMinorPatch}";
             var repositoryInfo = GetGitHubRepositoryInfo(Repository);
             Log.Information("Commit for the release: {GitVersionSha}", GitVersion.Sha);
-            
+
             return PublishRelease(x => x
-                .SetArtifactPaths(artifacts.Select(path => (string) path).ToArray())
+                .SetArtifactPaths(artifacts.Select(path => (string)path).ToArray())
                 .SetCommitSha(GitVersion.Sha)
                 .SetRepositoryName(repositoryInfo.repositoryName)
                 .SetRepositoryOwner(repositoryInfo.gitHubOwner)
