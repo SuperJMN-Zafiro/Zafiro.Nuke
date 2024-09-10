@@ -3,11 +3,13 @@ using DotnetPackaging;
 using DotnetPackaging.AppImage.Core;
 using GlobExpressions;
 using Nuke.Common;
+using Nuke.Common.Git;
 using Nuke.Common.IO;
 using Nuke.Common.ProjectModel;
 using Nuke.Common.Tooling;
 using Nuke.Common.Tools.DotNet;
 using Nuke.Common.Tools.GitVersion;
+using Nuke.GitHub;
 using Serilog;
 using Zafiro.FileSystem;
 using Zafiro.FileSystem.Lightweight;
@@ -16,18 +18,25 @@ using AppImage = DotnetPackaging.AppImage.AppImage;
 using Architecture = System.Runtime.InteropServices.Architecture;
 using Project = Nuke.Common.ProjectModel.Project;
 using static Nuke.GitHub.GitHubTasks;
-using Nuke.Common.Git;
-using Nuke.GitHub;
 
 namespace Zafiro.Nuke;
 
 public class Actions
 {
-    static readonly Dictionary<Architecture, (string Runtime, string RuntimeLinux)> ArchitectureData = new()
+    private static readonly Dictionary<Architecture, (string Runtime, string RuntimeLinux)> ArchitectureData = new()
     {
         [Architecture.X64] = ("linux-x64", "x86_64"),
-        [Architecture.Arm64] = ("linux-arm64", "arm64"),
+        [Architecture.Arm64] = ("linux-arm64", "arm64")
     };
+
+    public Actions(Solution solution, GitRepository repository, AbsolutePath rootDirectory, GitVersion gitVersion, string configuration = "Release")
+    {
+        Solution = solution;
+        Repository = repository;
+        RootDirectory = rootDirectory;
+        GitVersion = gitVersion;
+        Configuration = configuration;
+    }
 
     private System.IO.Abstractions.FileSystem FileSystem { get; } = new();
     public Solution Solution { get; }
@@ -39,16 +48,7 @@ public class Actions
     public AbsolutePath PublishDirectory => OutputDirectory / "publish";
     public AbsolutePath PackagesDirectory => OutputDirectory / "packages";
 
-    public Actions(Solution solution, GitRepository repository, AbsolutePath rootDirectory, GitVersion gitVersion, string configuration = "Release")
-    {
-        Solution = solution;
-        Repository = repository;
-        RootDirectory = rootDirectory;
-        GitVersion = gitVersion;
-        Configuration = configuration;
-    }
-
-    public Result<IEnumerable<AbsolutePath>> CreateAndroidPacks(string base64Keystore, string signingKeyAlias, string signingKeyPass, string signingStorePass)
+    public Result<IEnumerable<AbsolutePath>> CreateAndroidPacks(Project project, string base64Keystore, string signingKeyAlias, string signingKeyPass, string signingStorePass)
     {
         if (base64Keystore == null)
         {
@@ -72,7 +72,6 @@ public class Actions
 
         return Result.Try(() =>
         {
-            var androidProject = Solution.AllProjects.First(project => project.Name.EndsWith("Android"));
             var keystore = OutputDirectory / "temp.keystore";
             keystore.WriteAllBytes(Convert.FromBase64String(base64Keystore));
 
@@ -85,7 +84,7 @@ public class Actions
                 .SetProperty("AndroidSigningStorePass", signingStorePass)
                 .SetProperty("AndroidSigningKeyPass", signingKeyPass)
                 .SetConfiguration("Release")
-                .SetProject(androidProject)
+                .SetProject(project)
                 .SetOutput(PublishDirectory));
 
             keystore.DeleteFile();
@@ -94,52 +93,44 @@ public class Actions
         });
     }
 
-    public Result<IEnumerable<AbsolutePath>> CreateWindowsPacks()
+    public Result<IEnumerable<AbsolutePath>> CreateZip(Project project)
     {
-        var result = GetExecutableProject()
-            .Bind(project =>
+        return Result.Try(() =>
+        {
+            var runtimes = new[] { "win-x64" };
+
+            DotNetPublish(settings => settings
+                .SetConfiguration(Configuration)
+                .SetProject(project)
+                .CombineWith(runtimes, (c, runtime) =>
+                    c.SetRuntime(runtime)
+                        .SetOutput(PublishDirectory / runtime)));
+
+            return runtimes.Select(rt =>
             {
-                return Result.Try(() =>
-                {
-                    var runtimes = new[] { "win-x64", };
-
-                    DotNetPublish(settings => settings
-                        .SetConfiguration(Configuration)
-                        .SetProject(project)
-                        .CombineWith(runtimes, (c, runtime) =>
-                            c.SetRuntime(runtime)
-                                .SetOutput(PublishDirectory / runtime)));
-
-                    return runtimes.Select(rt =>
-                    {
-                        var src = PublishDirectory / rt;
-                        var zipName = $"{Solution.Name}_{GitVersion.MajorMinorPatch}_{rt}.zip";
-                        var dest = PackagesDirectory / zipName;
-                        Log.Information("Zipping {Input} to {Output}", src, dest);
-                        src.ZipTo(dest);
-                        return dest;
-                    });
-                });
+                var src = PublishDirectory / rt;
+                var zipName = $"{Solution.Name}_{GitVersion.MajorMinorPatch}_{rt}.zip";
+                var dest = PackagesDirectory / zipName;
+                Log.Information("Zipping {Input} to {Output}", src, dest);
+                src.ZipTo(dest);
+                return dest;
             });
-
-        return result;
+        });
     }
 
-    private Result<Project> GetExecutableProject()
-    {
-        return Solution.AllProjects
-            .TryFirst(project => project.GetOutputType().Equals("exe", StringComparison.OrdinalIgnoreCase))
-            .ToResult("Cannot find any project of type 'Exe'");
-    }
-
-    public Task<Result<IEnumerable<AbsolutePath>>> CreateLinuxAppImages(Options options)
+    /// <summary>
+    /// Create AppImages for Linux
+    /// </summary>
+    /// <param name="project">Project to pack</param>
+    /// <param name="options">Options for the packaged application</param>
+    /// <returns></returns>
+    public Task<Result<IEnumerable<AbsolutePath>>> CreateAppImages(Project project, Options options)
     {
         IEnumerable<Architecture> supportedArchitectures = [Architecture.Arm64, Architecture.X64];
 
-        var executableProject = GetExecutableProject();
-        return executableProject.Bind(project => supportedArchitectures
+        return supportedArchitectures
             .Select(architecture => CreateAppImage(options, architecture, project).Tap(() => Log.Information("Publishing AppImage for {Architecture}", architecture)))
-            .CombineInOrder());
+            .CombineInOrder();
     }
 
     private Task<Result<AbsolutePath>> CreateAppImage(Options options, Architecture architecture, Project desktopProject)
@@ -174,7 +165,7 @@ public class Actions
             .Combine();
     }
 
-    public Task<Result> CreateGitHubRelease(string authenticationToken, params AbsolutePath[] artifacts)
+    public Task<Result> CreateGitHubRelease(string token, params AbsolutePath[] artifacts)
     {
         return Result.Try(() =>
         {
@@ -189,7 +180,7 @@ public class Actions
                 .SetRepositoryName(repositoryInfo.repositoryName)
                 .SetRepositoryOwner(repositoryInfo.gitHubOwner)
                 .SetTag(releaseTag)
-                .SetToken(authenticationToken)
+                .SetToken(token)
             );
         });
     }
