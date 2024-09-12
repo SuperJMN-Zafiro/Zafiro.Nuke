@@ -6,13 +6,11 @@ using Nuke.Common;
 using Nuke.Common.Git;
 using Nuke.Common.IO;
 using Nuke.Common.ProjectModel;
-using Nuke.Common.Tooling;
 using Nuke.Common.Tools.DotNet;
 using Nuke.Common.Tools.GitVersion;
 using Nuke.GitHub;
 using Serilog;
-using Zafiro.FileSystem;
-using Zafiro.FileSystem.Lightweight;
+using Zafiro.FileSystem.Core;
 using static Nuke.Common.Tools.DotNet.DotNetTasks;
 using AppImage = DotnetPackaging.AppImage.AppImage;
 using Architecture = System.Runtime.InteropServices.Architecture;
@@ -37,7 +35,7 @@ public class Actions
         GitVersion = gitVersion;
         Configuration = configuration;
     }
-
+    
     private System.IO.Abstractions.FileSystem FileSystem { get; } = new();
     public Solution Solution { get; }
     public GitRepository Repository { get; }
@@ -93,28 +91,29 @@ public class Actions
         });
     }
 
-    public Result<IEnumerable<AbsolutePath>> CreateZip(Project project)
+    public Result<IEnumerable<AbsolutePath>> CreateWindowsPacks(Project project)
+    {
+        string[] runtimes = ["win-x64"];
+        
+        return runtimes.Select(rt => CreateZip(project, rt)).Combine();
+    }
+
+    public Result<AbsolutePath> CreateZip(Project project, string runtime)
     {
         return Result.Try(() =>
         {
-            var runtimes = new[] { "win-x64" };
-
             DotNetPublish(settings => settings
                 .SetConfiguration(Configuration)
                 .SetProject(project)
-                .CombineWith(runtimes, (c, runtime) =>
-                    c.SetRuntime(runtime)
-                        .SetOutput(PublishDirectory / runtime)));
+                .SetRuntime(runtime)
+                .SetOutput(PublishDirectory / runtime));
 
-            return runtimes.Select(rt =>
-            {
-                var src = PublishDirectory / rt;
-                var zipName = $"{Solution.Name}_{GitVersion.MajorMinorPatch}_{rt}.zip";
-                var dest = PackagesDirectory / zipName;
-                Log.Information("Zipping {Input} to {Output}", src, dest);
-                src.ZipTo(dest);
-                return dest;
-            });
+            var src = PublishDirectory / runtime;
+            var zipName = $"{Solution.Name}_{GitVersion.MajorMinorPatch}_{runtime}.zip";
+            var dest = PackagesDirectory / zipName;
+            Log.Information("Zipping {Input} to {Output}", src, dest);
+            src.ZipTo(dest);
+            return dest;
         });
     }
 
@@ -146,14 +145,18 @@ public class Actions
 
         var packagePath = OutputDirectory / Solution.Name + "-" + GitVersion.MajorMinorPatch + "-" + ArchitectureData[architecture].RuntimeLinux + ".AppImage";
 
-        return AppImage
-            .From()
-            .Directory(new DotnetDir(FileSystem.DirectoryInfo.New(publishDirectory)))
-            .Configure(configuration => configuration.From(options))
-            .Build()
-            .Bind(appImage => appImage.ToData())
-            .Bind(x => x.DumpTo(packagePath))
-            .Map(() => packagePath);
+        var dirResult = new Zafiro.FileSystem.Local.Directory(FileSystem.DirectoryInfo.New(publishDirectory));
+
+        return dirResult
+            .ToDirectory()
+            .Bind(directory => AppImage
+                .From()
+                .Directory(directory)
+                .Configure(configuration => configuration.From(options))
+                .Build()
+                .Bind(appImage => appImage.ToData())
+                .Bind(x => x.DumpTo(packagePath))
+                .Map(() => packagePath));
     }
 
     public Result PushNuGetPackages(string nuGetApiKey)
