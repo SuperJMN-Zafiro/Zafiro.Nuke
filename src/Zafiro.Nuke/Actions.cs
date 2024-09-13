@@ -125,7 +125,7 @@ public class Actions
                 .SetProperty("DebugType", "embedded")
                 .SetOutput(OutputDirectory));
 
-            File.Move(OutputDirectory / project.Name + ".exe", OutputDirectory / finalName);
+            File.Move(OutputDirectory / project.Name + ".exe", OutputDirectory / finalName + ".exe");
             
             return finalPath;
         });
