@@ -6,7 +6,6 @@ using Nuke.Common;
 using Nuke.Common.Git;
 using Nuke.Common.IO;
 using Nuke.Common.ProjectModel;
-using Nuke.Common.Tooling;
 using Nuke.Common.Tools.DotNet;
 using Nuke.Common.Tools.GitVersion;
 using Nuke.GitHub;
@@ -22,14 +21,21 @@ namespace Zafiro.Nuke;
 
 public class Actions
 {
-    private static readonly Dictionary<Architecture, (string Runtime, string RuntimeLinux)> ArchitectureData = new()
+    private static readonly Dictionary<Architecture, (string Runtime, string RuntimeLinux)> LinuxArchitecture = new()
     {
         [Architecture.X64] = ("linux-x64", "x86_64"),
         [Architecture.Arm64] = ("linux-arm64", "arm64")
     };
 
+    private static readonly Dictionary<Architecture, (string Runtime, string Suffix)> WindowsArchitecture = new()
+    {
+        [Architecture.X64] = ("win-x64", "x64"),
+    };
+
     public Actions(Solution solution, GitRepository repository, AbsolutePath rootDirectory, GitVersion gitVersion, string configuration = "Release")
     {
+        var p = new Solution();
+        
         Solution = solution;
         Repository = repository;
         RootDirectory = rootDirectory;
@@ -94,35 +100,45 @@ public class Actions
 
     public Result<IEnumerable<AbsolutePath>> CreateWindowsPacks(Project project)
     {
-        string[] runtimes = ["win-x64"];
+        Architecture[] runtimes = [Architecture.X64];
 
+        return Result.Try(() => runtimes.Select(runtime => PublishExe(project, runtime)));
+    }
+
+    private AbsolutePath PublishExe(Project project, Architecture architecture)
+    {
+        var outputDirectory = OutputDirectory / project.Name + $"_{WindowsArchitecture[architecture].Suffix}" + ".exe";
+        Log.Information("Creating .exe from {Input} to {Output}", project.Name, outputDirectory);
+        
         DotNetPublish(settings => settings
             .SetProject(project)
             .SetConfiguration(Configuration)
             .SetSelfContained(true)
             .SetPublishSingleFile(true)
             .SetVersion(GitVersion.MajorMinorPatch)
-            .CombineWith(runtimes, (innerSettings, runtime) => innerSettings
-                .SetRuntime(runtime)
-                .SetOutput(PublishDirectory / runtime)));
-
-        return runtimes.Select(rt => CreateZip(project, rt)).Combine();
+            .SetRuntime(WindowsArchitecture[architecture].Runtime)
+            .SetProperty("IncludeNativeLibrariesForSelfExtract", "true")
+            .SetProperty("IncludeAllContentForSelfExtract", "true")
+            .SetProperty("DebugType", "embedded"));
+        
+        return outputDirectory;
     }
 
     public Result<AbsolutePath> CreateZip(Project project, string runtime)
     {
         return Result.Try(() =>
         {
+            var src = PublishDirectory / runtime;
+            var zipName = $"{Solution.Name}_{GitVersion.MajorMinorPatch}_{runtime}.zip";
+            var dest = PackagesDirectory / zipName;
+            Log.Information("Zipping {Input} to {Output}", src, dest);
+            
             DotNetPublish(settings => settings
                 .SetProject(project)
                 .SetConfiguration(Configuration)
                 .SetRuntime(runtime)
                 .SetOutput(PublishDirectory / runtime));
             
-            var src = PublishDirectory / runtime;
-            var zipName = $"{Solution.Name}_{GitVersion.MajorMinorPatch}_{runtime}.zip";
-            var dest = PackagesDirectory / zipName;
-            Log.Information("Zipping {Input} to {Output}", src, dest);
             src.ZipTo(dest);
             return dest;
         });
@@ -145,16 +161,16 @@ public class Actions
 
     private Task<Result<AbsolutePath>> CreateAppImage(Options options, Architecture architecture, Project desktopProject)
     {
-        var publishDirectory = desktopProject.Directory / "bin" / "publish" / ArchitectureData[architecture].Runtime;
+        var publishDirectory = desktopProject.Directory / "bin" / "publish" / LinuxArchitecture[architecture].Runtime;
 
         DotNetPublish(settings => settings
             .SetConfiguration(Configuration)
             .SetProject(desktopProject)
-            .SetRuntime(ArchitectureData[architecture].Runtime)
+            .SetRuntime(LinuxArchitecture[architecture].Runtime)
             .SetSelfContained(true)
             .SetOutput(publishDirectory));
 
-        var packagePath = OutputDirectory / Solution.Name + "-" + GitVersion.MajorMinorPatch + "-" + ArchitectureData[architecture].RuntimeLinux + ".AppImage";
+        var packagePath = OutputDirectory / Solution.Name + "-" + GitVersion.MajorMinorPatch + "-" + LinuxArchitecture[architecture].RuntimeLinux + ".AppImage";
 
         var dirResult = new Zafiro.FileSystem.Local.Directory(FileSystem.DirectoryInfo.New(publishDirectory));
 
