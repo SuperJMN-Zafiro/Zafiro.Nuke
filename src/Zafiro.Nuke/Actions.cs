@@ -9,6 +9,7 @@ using Nuke.Common.ProjectModel;
 using Nuke.Common.Tools.DotNet;
 using Nuke.Common.Tools.GitVersion;
 using Nuke.GitHub;
+using Octokit;
 using Serilog;
 using Zafiro.FileSystem.Core;
 using static Nuke.Common.Tools.DotNet.DotNetTasks;
@@ -108,9 +109,9 @@ public class Actions
     {
         return Result.Try(() =>
         {
-            var fileName = project.Name + $"_{WindowsArchitecture[architecture].Suffix}";
-            var exePath = OutputDirectory / project.Name + $"_{WindowsArchitecture[architecture].Suffix}" + ".exe";
-            Log.Information("Creating .exe from {Input} to {Output}", project.Name, exePath);
+            var finalName = project.Name + $"_{WindowsArchitecture[architecture].Suffix}";
+            var finalPath = OutputDirectory / project.Name + $"_{WindowsArchitecture[architecture].Suffix}" + ".exe";
+            Log.Information("Creating .exe from {Input} to {Output}", project.Name, finalPath);
 
             DotNetPublish(settings => settings
                 .SetProject(project)
@@ -121,11 +122,12 @@ public class Actions
                 .SetRuntime(WindowsArchitecture[architecture].Runtime)
                 .SetProperty("IncludeNativeLibrariesForSelfExtract", "true")
                 .SetProperty("IncludeAllContentForSelfExtract", "true")
-                .SetProperty("AssemblyName", fileName)
                 .SetProperty("DebugType", "embedded")
                 .SetOutput(OutputDirectory));
 
-            return exePath;
+            File.Move(OutputDirectory / project.Name + ".exe", OutputDirectory / finalName);
+            
+            return finalPath;
         });
     }
 
