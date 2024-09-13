@@ -34,8 +34,6 @@ public class Actions
 
     public Actions(Solution solution, GitRepository repository, AbsolutePath rootDirectory, GitVersion gitVersion, string configuration = "Release")
     {
-        var p = new Solution();
-        
         Solution = solution;
         Repository = repository;
         RootDirectory = rootDirectory;
