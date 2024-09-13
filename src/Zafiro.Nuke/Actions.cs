@@ -6,6 +6,7 @@ using Nuke.Common;
 using Nuke.Common.Git;
 using Nuke.Common.IO;
 using Nuke.Common.ProjectModel;
+using Nuke.Common.Tooling;
 using Nuke.Common.Tools.DotNet;
 using Nuke.Common.Tools.GitVersion;
 using Nuke.GitHub;
@@ -94,7 +95,17 @@ public class Actions
     public Result<IEnumerable<AbsolutePath>> CreateWindowsPacks(Project project)
     {
         string[] runtimes = ["win-x64"];
-        
+
+        DotNetPublish(settings => settings
+            .SetProject(project)
+            .SetConfiguration(Configuration)
+            .SetSelfContained(true)
+            .SetPublishSingleFile(true)
+            .SetVersion(GitVersion.MajorMinorPatch)
+            .CombineWith(runtimes, (innerSettings, runtime) => innerSettings
+                .SetRuntime(runtime)
+                .SetOutput(PublishDirectory / runtime)));
+
         return runtimes.Select(rt => CreateZip(project, rt)).Combine();
     }
 
@@ -103,11 +114,11 @@ public class Actions
         return Result.Try(() =>
         {
             DotNetPublish(settings => settings
-                .SetConfiguration(Configuration)
                 .SetProject(project)
+                .SetConfiguration(Configuration)
                 .SetRuntime(runtime)
                 .SetOutput(PublishDirectory / runtime));
-
+            
             var src = PublishDirectory / runtime;
             var zipName = $"{Solution.Name}_{GitVersion.MajorMinorPatch}_{runtime}.zip";
             var dest = PackagesDirectory / zipName;
