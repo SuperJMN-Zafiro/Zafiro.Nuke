@@ -96,30 +96,37 @@ public class Actions
         });
     }
 
-    public Result<IEnumerable<AbsolutePath>> CreateWindowsPacks(Project project)
+    public Task<Result<IEnumerable<AbsolutePath>>> CreateWindowsPacks(Project project)
     {
         Architecture[] runtimes = [Architecture.X64];
 
-        return Result.Try(() => runtimes.Select(runtime => PublishExe(project, runtime)));
+        var windowsPacks = runtimes.Select(runtime => PublishExe(project, runtime)).Combine();
+        return windowsPacks;
     }
 
-    private AbsolutePath PublishExe(Project project, Architecture architecture)
+    private async Task<Result<AbsolutePath>> PublishExe(Project project, Architecture architecture)
     {
-        var outputDirectory = OutputDirectory / project.Name + $"_{WindowsArchitecture[architecture].Suffix}" + ".exe";
-        Log.Information("Creating .exe from {Input} to {Output}", project.Name, outputDirectory);
-        
-        DotNetPublish(settings => settings
-            .SetProject(project)
-            .SetConfiguration(Configuration)
-            .SetSelfContained(true)
-            .SetPublishSingleFile(true)
-            .SetVersion(GitVersion.MajorMinorPatch)
-            .SetRuntime(WindowsArchitecture[architecture].Runtime)
-            .SetProperty("IncludeNativeLibrariesForSelfExtract", "true")
-            .SetProperty("IncludeAllContentForSelfExtract", "true")
-            .SetProperty("DebugType", "embedded"));
-        
-        return outputDirectory;
+        return Result.Try(() =>
+        {
+            var fileName = project.Name + $"_{WindowsArchitecture[architecture].Suffix}";
+            var exePath = OutputDirectory / project.Name + $"_{WindowsArchitecture[architecture].Suffix}" + ".exe";
+            Log.Information("Creating .exe from {Input} to {Output}", project.Name, exePath);
+
+            DotNetPublish(settings => settings
+                .SetProject(project)
+                .SetConfiguration(Configuration)
+                .SetSelfContained(true)
+                .SetPublishSingleFile(true)
+                .SetVersion(GitVersion.MajorMinorPatch)
+                .SetRuntime(WindowsArchitecture[architecture].Runtime)
+                .SetProperty("IncludeNativeLibrariesForSelfExtract", "true")
+                .SetProperty("IncludeAllContentForSelfExtract", "true")
+                .SetProperty("AssemblyName", fileName)
+                .SetProperty("DebugType", "embedded")
+                .SetOutput(OutputDirectory));
+
+            return exePath;
+        });
     }
 
     public Result<AbsolutePath> CreateZip(Project project, string runtime)

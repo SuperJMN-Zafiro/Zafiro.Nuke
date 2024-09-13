@@ -10,6 +10,6 @@ public class WindowsDeployment(Actions actions) : IDeployment
 
     public Task<Result<IEnumerable<AbsolutePath>>> Create(Project project)
     {
-        return Task.FromResult(Actions.CreateWindowsPacks(project));
+        return Actions.CreateWindowsPacks(project);
     }
 }
