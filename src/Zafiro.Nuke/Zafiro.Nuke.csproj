@@ -15,8 +15,8 @@
 		<PackageReference Include="Nuke.GitHub" Version="5.0.1" />
 		<PackageReference Include="DotnetPackaging.AppImage" Version="2.0.9" />
 		<PackageReference Include="DotnetPackaging.Deb" Version="2.0.9" />
-		<PackageReference Include="Zafiro" Version="11.0.1" />
-		<PackageReference Include="Zafiro.FileSystem.Local" Version="11.0.1" />
+		<PackageReference Include="Zafiro" Version="12.0.1" />
+		<PackageReference Include="Zafiro.FileSystem.Local" Version="12.0.1" />
 	</ItemGroup>
 
 </Project>
