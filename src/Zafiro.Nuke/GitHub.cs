@@ -31,6 +31,7 @@ public class GitHub
     public Task<Result> PublishToPages(ZafiroPath projectPath)
     {
         var result = PublishWithDotNet(projectPath)
+            .Bind(directory => directory.Directories().TryFirst(d => d.Name.Contains("wwwroot")).ToResult("Cannot find wwwroot directory in the output"))
             .Bind(PushToRepo);
 
         return result;
