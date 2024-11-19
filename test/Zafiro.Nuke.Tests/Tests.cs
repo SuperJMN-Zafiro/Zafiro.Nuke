@@ -51,7 +51,7 @@ public class Tests
         };
 
         var pages = new GitHub(gitHubClient, "SuperJMN-Zafiro.github.io", "SuperJMN-Zafiro");
-        var result = await pages.PublishToPages(projectPath);
+        var result = await pages.PublishAvaloniaAppToPages(projectPath);
         result.Should().Succeed();
     }
 }

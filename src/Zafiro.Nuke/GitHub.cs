@@ -28,7 +28,7 @@ public class GitHub
     public string RepositoryName { get; }
     public GitHubClient Client { get; }
 
-    public Task<Result> PublishToPages(ZafiroPath projectPath)
+    public Task<Result> PublishAvaloniaAppToPages(ZafiroPath projectPath)
     {
         var result = PublishWithDotNet(projectPath)
             .Bind(directory => directory.Directories().TryFirst(d => d.Name.Contains("wwwroot")).ToResult("Cannot find wwwroot directory in the output"))
@@ -41,12 +41,23 @@ public class GitHub
     {
         IRootedFile noJekyllFile = new RootedFile(ZafiroPath.Empty, new File(".nojekyll", Data.FromString("No Jekyll")));
 
-        var files = directory
+        var filesToCopy = directory
             .RootedFiles()
+            .Where(ShouldUpload)
             .Append(noJekyllFile); // This needs to be there for Avalonia applications to work
 
-        return GetTree(files)
+        return GetTree(filesToCopy)
             .Bind(PushTree);
+    }
+
+    private static bool ShouldUpload(IRootedFile x)
+    {
+        var excludedExtensions = new[] { ".br", ".gz", ".js.map" };
+        
+        var hasExcludedExt = excludedExtensions.Any(s => x.FullPath().ToString().EndsWith(s, StringComparison.OrdinalIgnoreCase));
+        var shouldUpload = !hasExcludedExt;
+        
+        return shouldUpload;
     }
 
     private Task<Result> PushTree(IEnumerable<NewTreeItem> items)
