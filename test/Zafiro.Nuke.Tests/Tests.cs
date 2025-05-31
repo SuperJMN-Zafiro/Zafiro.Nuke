@@ -27,7 +27,8 @@ public class Tests
         var solution = SolutionModelTasks.ParseSolution(solutionDir / "Sample.sln");
         var projects = solution.Projects;
 
-        Actions actions = new Actions(solution, null, currentDirectory, new GitVersion());
+        // TODO: Fix this GitVersion construction mess
+        Actions actions = new Actions(solution, null, currentDirectory, new GitVersion(0,0,0,"0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0",0,"0"));
         var file = await actions.CreateWindowsPacks(solution.GetProject("SampleProject"));
         file.Should().Succeed();
     }
